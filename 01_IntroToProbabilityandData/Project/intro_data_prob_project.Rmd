@@ -1,0 +1,149 @@
+---
+title: "Exploring the BRFSS data"
+author: "Saul Garcia-Calderon"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(knitr)
+```
+
+### Load data
+
+```{r load-data}
+load("brfss2013.RData")
+```
+
+
+* * *
+
+## Part 1: Data
+
+For this project, the objective is to analyze the **The Behavioral Risk Factor Surveillance System** [BRFSS](https://www.cdc.gov/brfss/annual_data/2013/pdf/Overview_2013.pdf) dataset. The BRFSS is administered and supported by CDC’s Population Health Surveillance Branch, under the Division of Population Health at the National Center for Chronic Disease Prevention and Health Promotion. BRFSS is an ongoing surveillance system designed to measure behavioral risk factors for the non-institutionalized adult population (18 years of age and older) residing in the US. The data has been collected since 1984, and it contains information all through 2013.
+
+The data collection could be seen as two types of sampling: **Stratified Sampling** and **Simple Random Sampling**
+
+* **Stratified Sampling**:
+The data has been collected ever since 1984. It started with 15 states, and later on in 2001 there were already 50 states participating. By using this information, our sample can only be representative for the different *stratas* that participated in this survey.
+
+* **Simple Random Sampling**:
+On the other hand, if we assume that all the US population possess a Cellular Telephone, since from 2011 the project began collecting interviews via mobile phone, then we could assume that the sample generated is random and it represents the whole US population.
+The data started to be collected in 1984, 15 states
+Later on, in 2001 there were 50 states
+In 2011, they began collecting interviews using Cellular Telephone.
+
+#### Causality or Association?
+
+In this study, we can only get so far as to describe associations between variables. While this is only an **observational study**, there could be evidence of naturally occurring association between variables, but **not** a **causal** connection, this can only be investigated by the conduct of an experiment.
+
+* * *
+
+## Part 2: Research questions
+
+**Research quesion 1:**
+Is there an association between general health (`genhlth`) and the amount of hours a person sleeps (`sleptim1`)?
+
+It is interesting to see whether *sleeping hours* have an influence in a persons health.
+
+**Research quesion 2:**
+Is there an association between general health (`genhlth`) and the income level (`income2`)?
+
+It is interesting to see whether it exists a relation between the level of a persons income, with its state of health.
+
+**Research quesion 3:**
+Is there an association between general health (`genhlth`) and the education level (`educa`)?
+
+Education is an important factor in nowadays communities, it is interesting to see whether it has a relation with general health of the population.
+* * *
+
+## Part 3: Exploratory data analysis
+
+**Research quesion 1:**
+
+In order to know whether or not there is an association between *General Health* and *Sleep Time* from the US population, it is necessary to see if there are irregularities in our data. 
+
+```{r}
+summary(brfss2013$sleptim1)
+summary(brfss2013$genhlth)
+```
+
+We can see that both of our variables have `NAs`, and the *sleept time* even has some irregularities with some unrealistic number of hours. We proceede to clean this data and classify Health as simply "Good" or "Bad".
+
+```{r}
+df <- brfss2013 %>% filter(!is.na(sleptim1), sleptim1<=12, sleptim1>3,
+                           !is.na(income2), !is.na(genhlth)) %>%
+  select(sleptim1, income2, genhlth) %>% 
+  mutate(health = ifelse(genhlth == "Poor","Poor","Good"))
+
+ggplot(df, aes( y=sleptim1, x= health)) + geom_boxplot(fill="darkred") + 
+  xlab("Health")+ ylab("Sleeping Time") + ggtitle("Health vs Sleeping Hours") +
+  theme_bw()
+
+```
+
+As seen in the previous plot, the difference is not so drastic, but we can see that the median sleep for healthy people is 7 hours, while the people with poor health is 6 hours.
+
+**Research quesion 2:**
+
+In order to know whether or not there is an association between *General Health* and *Income level* from the US population, we will again divide the health into two categories "Good" and "Bad". We get rid of all `NAs` and take take the proportion of good health for each *income class*.
+
+```{r}
+df <- brfss2013 %>% filter(!is.na(income2), !is.na(genhlth)) %>%
+  select(income2, genhlth) %>% 
+  mutate(health = ifelse(genhlth == "Poor","Poor","Good")) %>% 
+  group_by(income2) %>%
+  summarize(PropGoodHealth= sum(health == "Good" )/n())
+kable(df, format="markdown")
+
+ggplot(df, aes(x = income2, y= PropGoodHealth)) + geom_point(size=2, col="blue")  +
+  scale_x_discrete(labels=c("<$10K","<$15K","<$20K","<$25K",
+                            "<$35K","<$50K","<$75K",">=$75K")) +
+  xlab("Income")+ ylab("Proportion of Good Health") + 
+    theme_bw()
+```
+
+For this observations, we have to take into account that the population belonging to each group of income is different from each other, hence we take the proportion from each class.
+
+As we can see, people tend to have better health the wealthier they are. It is interesting to see this association, but it makes us wonder what else could be associated, is it because the wealthier classes have an advantage by affording better healthcare, or could it possibly be that these groups are culturally different when it comes to healthy habits?
+
+
+**Research quesion 3:**
+Ultimately, to test if there is also an association between *General Health* and *Education*
+
+```{r}
+df <- brfss2013 %>% filter(!is.na(educa), !is.na(genhlth)) %>%
+  select(educa, genhlth) %>% 
+  mutate(health = ifelse(genhlth == "Poor","Poor","Good")) %>% 
+  group_by(educa) %>%
+  summarize(PropGoodHealth= sum(health == "Good" )/n())
+
+kable(df, format="markdown")
+```
+
+We will define a different nomenclature for each class, for the purpose of a more understandable visualization.
+```{r}
+# Setting new class labels
+df$class <- c("KG", "Elem", "some HS","HSGr","College","Graduate")
+kable(df[,-2],format="markdown")
+
+ggplot(df, aes(x = educa, y= PropGoodHealth)) + geom_point(size=2, col="blue")  +
+  scale_x_discrete(labels=c("KG", "Elem", "some HS",
+                            "HSGr","College","Graduate")) +
+  xlab("Education")+ ylab("Proportion of Good Health") + 
+    theme_bw()
+
+```
+
+Again the data proves to be an association between the variables. The people with a higher education tend to have better health than the rest of the population.
+
+Still it would be interesting to perform an experiment in order to find causality.
