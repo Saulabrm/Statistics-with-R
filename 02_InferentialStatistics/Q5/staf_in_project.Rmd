@@ -1,0 +1,225 @@
+---
+title: "Statistical inference with the GSS data"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(gridExtra)
+library(knitr)
+```
+
+### Load data
+
+Make sure your data and R Markdown files are in the same directory. When loaded
+your data file will be called `gss`. Delete this note when before you submit 
+your work. 
+
+```{r load-data}
+load("gss.Rdata")
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+Describe how the observations in the sample are collected, and the implications of this data collection method on the scope of inference (generalizability / causality). Note that you might will need to look into documentation on the GSS to answer this question. See http://gss.norc.org/ as well as the "More information on the data" section below.
+
+The dataset used for this analysis is the `gss dataset`, from the [General Social Survey](http://gss.norc.org/).
+
+The General Social Survey (GSS) has studied the growing complexity of American society. It is the only full-probability, personal-interview survey designed to monitor changes in both social characteristics and attitudes currently being conducted in the United States.
+
+The dataset main objective is to collect information able to explain trends and constants in attitudes, behaviors, and attributes.
+
+The data is collected through an interview which lasts about one and a half hours (median).
+
+1972 to 2004 was an independently drawn
+The data is generalizable for *"English-speaking persons 18 years of age or older, living in non-institutional arrangements within the United States"*.
+
+Starting in 2006 panish-speakers were added to the target population.
+
+Is important to remark that the objective of this data is to generalize the full American adult population, but we have to take into consideration that the sampling methodologies vary throughout the years and even in the same one  (Block quota sampling, Full probability Sampling). However, since random sampling was employed, it is possible to generalize for the US population.
+
+The following analysis is a retrospective observational study, with the objective to see if there exists a relationship between Respondent's religion and his economical situation in regard to average and its self perception.
+
+Since there are not experiments being done, this study can only infere correlation, and there will not be any explained causality.
+
+* * *
+
+## Part 2: Research question
+
+**Is there an association between a person being religious (of any religion or cult), and their econommical success and living condition?**
+
+This question is interesting to me because as I have been growing up and living in different cities and countries, I have seen that as I was younger, my perception of life was biased only in my catholic family and small social circle. With Social-Media, it is interesting to openly see the different religious or non-religious opinions of several friends and friends-of-friends from different cities, cultures and social status. Also in some way, the different lifestyles they live (or show), which maybe in the past was not as easily portrayed.
+
+At the same time, as I grew up in a completely religious environment, now it **seems** that people are tending to walk away of religion for whatever being the reason. I wonder if religion is related with a feeling of fulfillment and/or success, as the religious culture tries to teach "thankfulness" or there is basically no difference at all. 
+
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+
+
+```{r}
+# Data Subset
+data = gss %>% select(relig, satfin, finalter, parsol) %>% na.omit() 
+
+#Hidden results, due to much space taken.
+#summary(data)  
+#str(data)
+```
+
+As we can see, there are many `NAs` in our dataset, it is better to deal with this in order to have complete information of the different combination of categories.
+
+```{r}
+# Data Transformation
+data = data %>% mutate(religious = ifelse(relig =="None","Non-Religious","Religious"),
+                            parentsStandard = ifelse(parsol == "Somewhat Worse" | 
+                                                       parsol == "Much Worse", "Worse",
+                                                     ifelse(parsol =="Much Better"| 
+                                                       parsol == "Somewhat Better", "Better",
+                                                       "Same"))) 
+```
+
+For the dataset, we are going only to use the information regarding:
+
+`relig`: Which is the Respondant's religion, but we will create the new variable `religion`, to aggregate all religions onto *Religious* group and *Non-Religious* group.
+
+`satfin`: Is a variable for Financial satisfaction of the respondant, with 3 levels. [Satisfied, More or Less, Not at all Satisfied]
+
+`finalter`: Describes the financial change of the Respondant [Better, Worse, Stayed Same]
+
+`parsol`: Compares the respondant perspective on the financial comparison of himself against the life with with his/her parents. The variable was changed to fit in 3 groups [Better, Worse, Same]
+
+The `NA` were removed and the dataset and in order to manage all our variables with full information, we remain with `r nrow(data)` observations.
+
+First we can see what is the proportion or distribution of our categorical variables for the US-population.
+```{r}
+
+p1 = ggplot(data, aes(x=religious)) + geom_bar(fill="blue", col="black", aes(y = (..count..)/sum(..count..))) + 
+  theme_bw() + ggtitle("Religion") + ylab("Density")
+
+p2 = ggplot(data, aes(x=satfin)) + geom_bar(fill="blue", col="black", aes(y = (..count..)/sum(..count..))) + 
+  theme_bw() + ggtitle("Satisfaction") + ylab("Density")
+
+
+p3 = ggplot(data, aes(x=finalter)) + geom_bar(fill="blue", col="black", aes(y = (..count..)/sum(..count..))) + 
+  theme_bw() + ggtitle("Financial Change") + ylab("Density")
+
+
+p4 = ggplot(data, aes(x=parentsStandard)) + geom_bar(fill="blue", col="black", aes(y = (..count..)/sum(..count..))) + 
+  theme_bw() + ggtitle("Living Stnd Compared To Parents") + ylab("Density")
+
+
+grid.arrange(p1,p2,p3,p4, nrow=2,ncol=2)
+```
+
+* At plain sight we can see that we have significantly more religious people around $85$% compared to $15$% of Non-Religious.
+
+* In general we could see that regarding satisfaction $70$% feel at least satisfied with their financial situation.
+
+* Only around $20$% feel that their financial situation has been getting worse in the last few years.
+
+* Below $20$% of the people feel that they have a worse living standard compared to their life with their parents.
+
+Now we could try to compare the same information for the categories *Religious* and *Non-Religous* people.
+
+Since they have different totals, we will display de information in table of proportions
+```{r}
+# Function for proprotins
+tableOfProportions = function(x,y){
+  t = table(x,y)
+sU= sum(table(x,y)[1,])
+sD = sum(table(x,y)[2,])
+t[1,] = t[1,] /sU
+t[2,] = t[2,] /sD
+return(round(t,2))
+}
+
+# Financial Satisfaction
+t0 = tableOfProportions(data$religious,data$satfin)
+kable(t0, format = "markdown")
+```
+
+Little difference can be seen regarding "Satisfaction", Religious people seem to be more satisfied regarding their financial situation.
+
+```{r}
+# Financial Alteration
+t1 = tableOfProportions(data$religious,data$finalter)
+kable(t1, format = "markdown")
+```
+
+Little difference can be seen in the "Financial Alteration"
+```{r}
+# Living Standard compared to Parents
+t2 = tableOfProportions(data$religious,data$parentsStandard)
+kable(t2, format = "markdown")
+```
+
+In this scenario, fewer *Religious* people claim to have a worse life standard than when they grew up with their parents compared to *Non-Religious*.
+
+* * *
+
+## Part 4: Inference
+
+**Inference: (28 points) Perform inference that addresses the research question you outlined above. Each R output and plot should be accompanied by a brief interpretation.**
+
+
+For this hypothesis, there are two categorical variables `Religious` with 2 levels [Religious, Non-Religious] and `satfin` with 2 levels [Satisfied, Not-Satisfied]. This means we are allowed to compute a *Confidence Interval* and later on a *Hypothesis Test*.
+
+### Check Conditions
+* Independence : the observations in the sample are independent (According to the GSS).
+* Sample size is sufficiently large, the succes/failure condition is met **np≥10**.
+
+First we will merge `satfin` variable, in order to have only two categories, since we care whether the Respondant is satisfied or not.
+```{r,warning=FALSE}
+# Merging Satisfaction Variable
+data2 = data %>% mutate(satisfaction = ifelse(satfin =="Not At All Sat","Not-Satisfied","Satisfied"))
+```
+
+
+### Confidence Interval
+
+Our confidence interval explores the difference of proportions of Religious and Non-Religious US population who feel satisfied with their financial situation.
+
+```{r,warning=F}
+inference(y = satisfaction, x = religious, data = data2, type="ci",statistic = "proportion",
+          method = "theoretical",
+          success = "Satisfied", alternative = "twosided")
+```
+
+Our confidence interval does not pass through 0. This means we are 95% confident that the Religious people are from 2% to 7% more satisfied with their financial situation.
+
+In order to verify if this we can use Chi-Square Goodness of fit, to see if it is not only random chance, by computing an Hypothesis Test.
+
+### Hypothesis Test
+
+The **Chi-Square Goodness of Fit Test** is appropriate and will be used to test the hypothesis modeled after our question described previously:
+
+$H_{0}$: Religious and Non-Religious people are in general equally satisfied with their financial status.
+
+$H_{A}$ Religious and Non-Religious people are not equally satisfied with their financial status.
+
+
+### Goodness of Fit
+```{r,warning=F}
+inference(y = satisfaction, x = religious, data = data2, type="ht",statistic = "proportion",
+          method = "theoretical",
+          success = "Satisfied", alternative = "twosided")
+```
+
+### Conclusion
+Since p-value is close to $0$, we can reject $H_{0}$. There is convincing evidence to say that the level of Financial Satisfaction for a Religious person is different than a Non-Religious one. This means that the difference shown is not only matter of random chance.
