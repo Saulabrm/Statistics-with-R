@@ -1,0 +1,352 @@
+---
+title: "Modeling and prediction for movies"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(knitr)
+library(reshape2)
+library(pander)
+library(GGally)
+```
+
+### Load data
+
+```{r load-data}
+load("Data/movies.Rdata")
+```
+
+
+
+There is no mention of experiments where random assignment was used on either a control or experimental group. Thus we can not establish causality and will only be able to find correlations within the data set.
+
+
+* * *
+
+## Part 1: Data
+
+The data consists of 651 randomly sampled movies produced and released before 2016. Bu utilizing random sampling, it allows to make generaziable any inference made to the actual population of movies from where the sample dataset was obtained.
+
+Since the information is only observational, and there is no mention of control or experimental groups where any random assignment being used, then it is only possible to look for *correlations* within the dataset, not being possible to declare *causality*.
+
+
+
+* * *
+
+## Part 2: Research question
+
+What are the variables that best predict the average rating score of the movies? Are these variables straight forward to obtain? This is interesting because nowadays people tend to rely on Netflix recommendations, but in order to look for the likelyhood of liking a movie or not when it is released in the cinema, an inference predictive model can be handful.
+
+*The average score is represented by the mean of `audience_score`, `imdb_rating` and `critics_score` *
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+To build this study we are interested in a couple of things:
+
+* Exploration of data congruence
+* Explain variable and scaling
+* Colinearity the Explanatory Variables
+
+### Exploration of data congruence
+
+```{r}
+dim(movies)
+```
+
+Our dataset contains 651 observations the title and 31 other variables which might or not be important. It is important to see if there exists records which might be troube for our analysis
+
+```{r}
+# Which titles are repeated?
+(repeated = names(table(movies$title))[table(movies$title)>1])
+```
+These records have shown to be repeated more than once in the dataset.
+```{r}
+m = movies %>% filter(title %in% repeated) %>% arrange(title)
+pander(m[,1:6])
+```
+
+Here we can see that only the movie **Man on Wire** has a duplicate in the dataset while the other films are either different or different versions, thus we can only remove one of the instances of **Man on Wire**.
+
+### Explain variable and scaling
+
+As it stated earlier, a new variable will be generated in order to make it our *Explain Variable*.
+
+```{r}
+# Summary of the Scores
+summary(movies[,c("audience_score","imdb_rating","critics_score")])
+```
+
+The scores to be merged can not simply go through an averge, because they are not on the same scale. In order to achieve this IMDB Rating must be rescaled to fit the other ones. 
+
+
+```{r}
+# Rescaling
+# Explain Variable name set to avg_score
+movies = movies %>% mutate(avg_score = round((audience_score + critics_score + imdb_rating*10)/3))
+```
+
+Now it is possible to visualize the distribution of each score.
+```{r}
+# Subset to see the distributions of the scores
+movies_score = movies[,c("title","audience_score","imdb_rating","critics_score","avg_score")]
+movies_score$imdb_rating = movies_score$imdb_rating*10
+movies_melted = melt(movies_score, id.vars = "title", measure.vars = c("audience_score","imdb_rating","critics_score","avg_score"))
+
+# Histogram of the different Ratings
+ggplot(movies_melted, aes(x= value) ) + 
+  geom_histogram(aes(fill=variable), position = "stack", alpha = 0.5) +
+  theme_classic() + scale_x_continuous(name="Score") + ggtitle("Movie Rating")
+```
+Now the the variable `avg_score` is ready to be used as the explain variable for our analysis.
+
+### About Explanatory Variables and Colinearity
+
+Now lets see how the model would work out. 
+
+* Before everything, lets deal with the `NAs`
+```{r}
+# Removie NA
+movies = na.omit(movies)
+```
+
+
+* First step is to remove: `audience_score`,`imdb_rating`,`critics_score`. These are the variables which are converted into the `avg_score`.
+
+* Second, remove: `director`,`actor1`,`actor2`,`actor3`,`actor4`,`actor5`. These variables being categorical have a huge amount of levels which isn't convinient to use for our model.
+
+```{r}
+# Number of different categories
+apply( movies[,c("director","actor1","actor2","actor3","actor4","actor5","studio")] , 2, function(x){
+  length(table(x))
+})
+
+```
+
+* Third, remove the urls: `imdb_url`,`rt_url`. These variables provide no information for the model.
+
+* Fourth, we need to check colinearity of the numerical variables in order to see if some should be dropped.
+We will set a threshold of $0.9$ in order to drop a variable if there exists colinearity.
+
+```{r numerical-variables}
+# Define numerical variables
+num_variables <- c("runtime", "thtr_rel_year", "thtr_rel_month", "dvd_rel_year", 
+                            "dvd_rel_month")
+ggpairs(movies[,num_variables], columns = num_variables)
+```
+ Since colinearity is not very high, the decision is to proceed with these variables.
+ 
+
+Finally we will drop the variables that won't be used in order to simplify the data set and not get confused.
+```{r Drop-variables}
+# Drop Variables
+remove = c("title","audience_score","imdb_rating","critics_score",
+           "director","actor1","actor2","actor3","actor4","actor5","studio",
+           "imdb_url","rt_url")
+
+# Dropping variables
+movies = movies %>% select(-one_of(remove))
+```
+
+The final variables chosen to build the model are the following:
+```{r, comment=NA}
+pander(data.frame("Variables" = names(movies)))
+```
+
+* * *
+
+## Part 4: Modeling
+
+In order to build our model we will use `backwards elimination` focusing on the significance of the variables with the `p-value` in order to discard the least significant ones. The decision is made with the purpose to fit less models, otherwise, the focus could rely on the highest *Adj. R-squared*.
+
+```{r}
+# Model 1
+fit1 = lm(avg_score~., data = movies)
+summary(fit1)
+```
+
+The variable `thtr_rel_day` will be taken out, since it has the highest *p-value* while not belonging to a factor variable.
+
+```{r}
+# Model 2
+fit2 = lm(avg_score~. -thtr_rel_day, data = movies)
+summary(fit2)
+```
+
+Now we remove `thtr_rel_month` which has a p-value of $0.92$.
+
+```{r}
+# Model 3
+fit3 = lm(avg_score~. - thtr_rel_day - thtr_rel_month, data = movies)
+summary(fit3)
+```
+Now we will remove `best_actress_win`.
+
+```{r}
+# Model 4
+fit4 = lm(avg_score~. - thtr_rel_day - thtr_rel_month -
+            best_actress_win, data = movies)
+summary(fit4)
+```
+
+Now we will remove `best_actor_win`.
+
+```{r}
+# Model 5
+fit5 = lm(avg_score~. - thtr_rel_day - thtr_rel_month -
+            best_actress_win - best_actor_win, data = movies)
+summary(fit5)
+```
+
+Now we will remove `top200_box`.
+```{r}
+# Model 6
+fit6 = lm(avg_score~. - thtr_rel_day - thtr_rel_month -
+            best_actress_win - best_actor_win -top200_box, data = movies)
+summary(fit6)
+```
+
+
+Now we will remove `dvd_rel_year`.
+```{r}
+# Model 7
+fit7 = lm(avg_score~. - thtr_rel_day - thtr_rel_month -
+            best_actress_win - best_actor_win -top200_box -
+            dvd_rel_year, data = movies)
+summary(fit7)
+```
+
+Now we will remove `best_pic_win`
+```{r}
+# Model 8
+fit8 = lm(avg_score~. - thtr_rel_day - thtr_rel_month -
+            best_actress_win - best_actor_win -top200_box -
+            dvd_rel_year - best_pic_win, data = movies)
+summary(fit8)
+```
+
+Now we will remove `dvd_rel_day`
+```{r}
+# Model 9
+fit9 = lm(avg_score~. - thtr_rel_day - thtr_rel_month -
+            best_actress_win - best_actor_win -top200_box -
+            dvd_rel_year - best_pic_win - dvd_rel_day, data = movies)
+summary(fit9)
+``` 
+
+Now we will remove `best_dir_win`
+```{r}
+# Model 10
+fit10 = lm(avg_score~. - thtr_rel_day - thtr_rel_month -
+            best_actress_win - best_actor_win -top200_box -
+            dvd_rel_year - best_pic_win - dvd_rel_day -
+            best_dir_win, data = movies)
+summary(fit10)
+``` 
+
+Now we will remove `dvd_rel_month`
+```{r}
+# Model 11
+fit11 = lm(avg_score~. - thtr_rel_day - thtr_rel_month -
+            best_actress_win - best_actor_win -top200_box -
+            dvd_rel_year - best_pic_win - dvd_rel_day -
+            best_dir_win - dvd_rel_month - best_pic_nom, data = movies)
+summary(fit11)
+``` 
+
+Finally we have all our variables being significant in our model, which doesn't mean that our Adjusted R-square is the best possible fit, but at least we have its value of $0.8307$ which can be a decent model.
+
+#### Residuals
+
+```{r}
+hist(fit11$residuals)
+qqnorm(fit11$residuals)
+```
+
+Residuals seem to be normally distributed with a little left skew.
+
+To see the variability of our residuals
+
+```{r}
+plot(fit11$residuals ~ fit11$fitted.values, main="Variability of Residuals")
+```
+The residuals seem to be scattered around 0. The model seems to have more variance on the lower ratings.
+
+```{r}
+plot(fit11$residuals, main="Independence of Residuals")
+abline(h = 0)
+```
+
+There is no sign that contradicts that our residuals are independent.
+
+#### About the Coefficients
+
+There is no wonder that the variables, `critics_rating` and `audience_rating` show a high significance in the model. These are basically a categorical representation of the score, and our objective is to find the variables which help to predict the score of the movie.
+
+* * *
+
+## Part 5: Prediction
+
+For prediction, we will predict the `avg_score` of the movie "Sleepless" (2017). We can see the information from the same sites as the dataset: [Rotten Tomatoes](https://www.rottentomatoes.com/m/sleepless_2017), [IMDB](https://www.rottentomatoes.com/m/sleepless_2017).
+
+```{r}
+
+# lm(formula = avg_score ~ . - thtr_rel_day - thtr_rel_month - 
+    best_actress_win - best_actor_win - top200_box - dvd_rel_year - 
+    best_pic_win - dvd_rel_day - best_dir_win - dvd_rel_month - 
+    best_pic_nom, data = movies)
+
+new = data.frame(title_type ="Feature Film",
+                 genre = "Action & Adventure",
+                 runtime = 91,
+                 mpaa_rating = "R",
+                 thtr_rel_year = 2017,
+                 imdb_num_votes = 7808 ,
+                 critics_rating =  "Rotten",
+                 audience_rating = "Spilled",
+                 thtr_rel_month = 1,
+                 thtr_rel_day =13,
+                 dvd_rel_year = 2017, dvd_rel_month = 4, dvd_rel_day = 18,
+                 best_pic_nom = "no", best_pic_win = "no",best_actor_win="no",
+                 best_actress_win="no", best_dir_win = "no", top200_box="no")
+
+predicted_score <- predict(fit11, newdata = new)
+
+(Sleepless_predicted = round(predicted_score))
+```
+
+Our model predicts an average score of 38 for "Sleepless". We need to calculate the real average in order to compare the prediction.
+
+```{r}
+Sleepless_rating = (44 + 5.5 *10 + 18)/3
+
+Difference = Sleepless_rating - Sleepless_predicted 
+Difference
+```
+
+Our model seems to be pretty accurate with this one, having only 1 score of a difference from the real average scoring.
+
+#### Confidence Interval
+```{r}
+predict(fit11, newdata = new,interval = "prediction", level = 0.95)
+```
+
+Our model is 95% confident that this film with the previously described features will have a grading between 23 and 53.
+
+* * *
+
+## Part 6: Conclusion
+
+The results found were interesting. It is possible to generate a model which is capable to generate inferences about the score that a movie would have depending on certain specific variables as shown in the study. We have to keep in mind that these model is biased since its basically only learning the definitions for *Rotten* or *Fresh* and *Spilled* that already come from the ratings. In any case, it was interesting and it is useful for learning purposes.
